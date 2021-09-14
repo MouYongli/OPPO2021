@@ -152,7 +152,7 @@ if __name__ == '__main__':
     # plt.imshow(other_img)
     # plt.show()
 
-    test_triplet_dataset = TripletDataset(args, split="test")
+    test_triplet_dataset = TripletDataset(args, split="test", transform=False)
     sample = test_triplet_dataset[0]
     img, person_id, example_id = sample["img"], sample["person_id"], sample["example_id"]
     print("person id", person_id, example_id)

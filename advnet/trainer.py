@@ -3,6 +3,7 @@ import os
 import os.path as osp
 import numpy as np
 import glob
+import skimage
 import torch
 from torch.autograd import Variable
 from datasets import TripletDataset, FaceDataset
@@ -86,25 +87,34 @@ def adversarial_attack(test_loader, advnet, gaussian_blur, cuda, experiment_dir)
     advnet.eval()
     gaussian_blur.eval()
     for batch_idx, sample in enumerate(test_loader):
-        imgs, person_id, example_id = sample["img"], sample["person_id"], sample["example_id"]
+        imgs, person_id, example_id, height, width = sample["img"], sample["person_id"], sample["example_id"], sample["height"], sample["width"]
         if cuda:
             imgs = imgs.cuda()
         imgs = Variable(imgs)
         with torch.no_grad():
             noise = gaussian_blur(advnet(imgs))
-        noised_img = imgs + noise
+        noised_img = (imgs + noise).data.cpu().numpy()
+        for img, pid, eid, h, w in zip(noised_img, person_id, example_id, height, width):
+            img = img.transpose(1,2,0)
+            img = skimage.transform.resize(img, (h, w))
+            out_dir = osp.join(experiment_dir, 'images/{}'.format(pid))
+            if not os.path.exists(out_dir):
+                os.makedirs(out_dir)
+            out_file = osp.join(out_dir, '{}_{}.jpg'.format(pid, eid))
+            skimage.io.imsave(out_file, img)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-g', '--gpu', type=int, required=True, help='gpu id')
-    parser.add_argument('--pretrain-epochs', type=int, default=0, help='epochs pretrain embeddingnet')
-    parser.add_argument('--epochs', type=int, default=200, help='epochs')
+    parser.add_argument('-g', '--gpu', type=int, default=0, help='gpu id')
+    parser.add_argument('--pretrain-epochs', type=int, default=2, help='epochs pretrain embeddingnet')
+    parser.add_argument('--epochs', type=int, default=2, help='epochs')
     parser.add_argument('--lr', type=float, default=1.0e-10, help='learning rate',)
     parser.add_argument('--weight-decay', type=float, default=0.0005, help='weight decay',)
     parser.add_argument('--seed', type=int, default=1337, help='seed for randomness',)
     parser.add_argument('--margin', type=float, default=1.0, help='margin in loss function',)
     parser.add_argument('--kernel-size', type=int, default=5, help='kernel size of gaussian blur',)
+    parser.add_argument('--img-size', type=int, default=112, help='image size (crop)',)
     parser.add_argument('--alpha-contra-mse', type=float, default=1.0, help='weight of contrastive mse loss',)
     parser.add_argument('--alpha-tv-l1', type=float, default=0.1, help='weight of tv l1 loss',)
     parser.add_argument('--alpha-tv-l2', type=float, default=0.2, help='weight of tv l2 loss',)
@@ -113,16 +123,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Set up experiment dir
-    directory = os.path.join(here, 'run')
+    directory = os.path.join(here, 'results')
     runs = sorted(glob.glob(os.path.join(directory, 'experiment_*')))
     run_id = int(runs[-1].split('_')[-1]) + 1 if runs else 0
     experiment_dir = os.path.join(directory, 'experiment_{}'.format(str(run_id)))
     if not os.path.exists(experiment_dir):
         os.makedirs(experiment_dir)
-    if not osp.exists(osp.join(experiment_dir, 'triplet_log.csv')):
-        with open(osp.join(experiment_dir.out, 'triplet_log.csv'), 'w') as f:
-            f.write(','.join(['epoch', 'iteration']) + '\n')
-
+    # if not osp.exists(osp.join(experiment_dir, 'triplet_log.csv')):
+    #     with open(osp.join(experiment_dir.out, 'triplet_log.csv'), 'w') as f:
+    #         f.write(','.join(['epoch', 'iteration']) + '\n')
 
     # Set up gpu configuration
     os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
@@ -157,10 +166,15 @@ if __name__ == '__main__':
     # Define loss function
     triplet_loss = TripletLoss(args.margin)
 
-    for epoch in range(args.pretrain_epochs):
-        train_triplet_epoch(epoch, train_triplet_loader, embedding_net, triplet_loss, triplet_optim, cuda, experiment_dir)
-
-    for epoch in range(args.epochs):
-        train_adv_epoch(epoch, train_adv_loader, advnet, gaussian_blur, embedding_net, adv_optim, cuda, experiment_dir, alpha_contra_mse=args.alpha_contra_mse, alpha_tv_l1=args.alpha_tv_l1, alpha_tv_l2=args.alpha_tv_l2, alpha_noise_l2=args.alpha_noise_l2, alpha_embedding_l2=args.alpha_embedding_l2)
-
+    # for epoch in range(args.pretrain_epochs):
+    #     train_triplet_epoch(epoch, train_triplet_loader, embedding_net, triplet_loss, triplet_optim, cuda, experiment_dir)
+    #
+    # for epoch in range(args.epochs):
+    #     train_triplet_epoch(epoch, train_triplet_loader, embedding_net, triplet_loss, triplet_optim, cuda,
+    #                         experiment_dir)
+    #     train_adv_epoch(epoch, train_adv_loader, advnet, gaussian_blur, embedding_net, adv_optim, cuda, experiment_dir,
+    #                     alpha_contra_mse=args.alpha_contra_mse, alpha_tv_l1=args.alpha_tv_l1,
+    #                     alpha_tv_l2=args.alpha_tv_l2, alpha_noise_l2=args.alpha_noise_l2,
+    #                     alpha_embedding_l2=args.alpha_embedding_l2)
+    adversarial_attack(test_adv_loader, advnet, gaussian_blur, cuda, experiment_dir)
 

@@ -183,7 +183,7 @@ class NoiseGenerator(nn.Module):
                                 nn.BatchNorm2d(32),
                                 nn.ReLU(inplace=True),)
         self.tp_conv2 = nn.ConvTranspose2d(32, 3, 2, 2, 0)
-        self.lsm = nn.LogSoftmax(dim=1)
+        self.tanh = nn.Tanh()
 
 
     def forward(self, x):
@@ -213,7 +213,7 @@ class NoiseGenerator(nn.Module):
         y = self.tp_conv1(d1)
         y = self.conv2(y)
         y = self.tp_conv2(y)
-        y = self.lsm(y)
+        y = self.tanh(y)
         y = F.interpolate(y, (h_old, w_old), mode="bilinear", align_corners=True)
         return y
 
