@@ -28,6 +28,13 @@ def train_triplet_epoch(epoch, train_loader, model, loss_fn, optimizer, cuda, ex
         optimizer.step()
     train_loss /= len(train_loader)
     print("Epoch {} Triplet Loss {}".format(epoch, train_loss))
+    torch.save({
+        'epoch': epoch,
+        'arch': model.__class__.__name__,
+        'optim_state_dict': optimizer.state_dict(),
+        'model_state_dict': model.state_dict(),
+    }, osp.join(experiment_dir, 'embedding_net_checkpoint.pth.tar'))
+
     # with open(osp.join(experiment_dir.out, 'triplet_log.csv'), 'a') as f:
     #     log = [epoch, train_loss]
     #     log = map(str, log)
@@ -78,6 +85,12 @@ def train_adv_epoch(epoch, train_loader, advnet, gaussian_blur, embedding_net, a
         adv_optim.step()
     train_loss /= len(train_loader)
     print("Train Adversarial Attacker Epoch {}, MSE {}, TV l1 {} l2 {}, Noise l2 {}, Embedding vector l2 {}".format(epoch, contra_mse, tv_l1, tv_l2, noise_l2, embedding_l2))
+    torch.save({
+        'epoch': epoch,
+        'arch': advnet.__class__.__name__,
+        'optim_state_dict': advnet.state_dict(),
+        'model_state_dict': adv_optim.model.state_dict(),
+    }, osp.join(experiment_dir, 'noise_generator_checkpoint.pth.tar'))
     # with open(osp.join(experiment_dir.out, 'adv_log.csv'), 'a') as f:
     #     log = [epoch, train_loss]
     #     log = map(str, log)
@@ -93,10 +106,12 @@ def adversarial_attack(test_loader, advnet, gaussian_blur, cuda, experiment_dir)
         imgs = Variable(imgs)
         with torch.no_grad():
             noise = gaussian_blur(advnet(imgs))
-        noised_img = (imgs + noise).data.cpu().numpy()
+        noised_img = (imgs + noise).clamp(min=0.0, max=1.0).data.cpu().numpy()
         for img, pid, eid, h, w in zip(noised_img, person_id, example_id, height, width):
             img = img.transpose(1,2,0)
             img = skimage.transform.resize(img, (h, w))
+            img = img * 255.
+            img = img.astype(np.uint8)
             out_dir = osp.join(experiment_dir, 'images/{}'.format(pid))
             if not os.path.exists(out_dir):
                 os.makedirs(out_dir)
@@ -107,8 +122,8 @@ def adversarial_attack(test_loader, advnet, gaussian_blur, cuda, experiment_dir)
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-g', '--gpu', type=int, default=0, help='gpu id')
-    parser.add_argument('--pretrain-epochs', type=int, default=2, help='epochs pretrain embeddingnet')
-    parser.add_argument('--epochs', type=int, default=2, help='epochs')
+    parser.add_argument('--pretrain-epochs', type=int, default=200, help='epochs pretrain embeddingnet')
+    parser.add_argument('--epochs', type=int, default=200, help='epochs')
     parser.add_argument('--lr', type=float, default=1.0e-10, help='learning rate',)
     parser.add_argument('--weight-decay', type=float, default=0.0005, help='weight decay',)
     parser.add_argument('--seed', type=int, default=1337, help='seed for randomness',)
